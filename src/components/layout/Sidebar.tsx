@@ -7,7 +7,7 @@ import {
   LogOut,
   Sparkles,
 } from "lucide-react";
-import { Logo } from "./Logo";
+import { Logo } from "@/components/Logo";
 import { useAppStore } from "@/store/useAppStore";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
