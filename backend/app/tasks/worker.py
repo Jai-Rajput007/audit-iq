@@ -1,0 +1,11 @@
+from celery import Celery
+
+from app.core.config import get_settings
+
+settings = get_settings()
+celery_app = Celery(
+    "auditsummar_worker",
+    broker=settings.celery_broker_url,
+    backend=settings.celery_result_backend,
+)
+celery_app.conf.task_routes = {"app.tasks.report_tasks.process_report_task": {"queue": "report-processing"}}

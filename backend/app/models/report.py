@@ -1,6 +1,6 @@
 from datetime import date
 
-from sqlalchemy import Date, ForeignKey, Integer, JSON, String, Text
+from sqlalchemy import BIGINT, Date, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampedModel
@@ -26,6 +26,9 @@ class Report(Base, TimestampedModel):
     )
     metrics: Mapped["ReportMetric | None"] = relationship(
         "ReportMetric", back_populates="report", cascade="all, delete-orphan", uselist=False
+    )
+    upload: Mapped["ReportUpload | None"] = relationship(
+        "ReportUpload", back_populates="report", cascade="all, delete-orphan", uselist=False
     )
 
 
@@ -65,3 +68,16 @@ class ReportMetric(Base, TimestampedModel):
     heatmap: Mapped[list[dict]] = mapped_column(JSON, nullable=False, default=list)
 
     report: Mapped["Report"] = relationship("Report", back_populates="metrics")
+
+
+class ReportUpload(Base, TimestampedModel):
+    __tablename__ = "report_uploads"
+
+    report_id: Mapped[str] = mapped_column(String(36), ForeignKey("reports.id"), nullable=False, unique=True, index=True)
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    storage_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(BIGINT, nullable=False)
+    processing_step: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+    report: Mapped["Report"] = relationship("Report", back_populates="upload")

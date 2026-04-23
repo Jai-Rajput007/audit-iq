@@ -16,10 +16,10 @@
 - [x] Step 1: Backend foundation
 - [x] Step 2: Auth and RBAC
 - [x] Step 3: Reports and dashboard
-- [ ] Step 4: Upload pipeline
-- [ ] Step 5: Viewer and AI chat
-- [ ] Step 6: Settings and admin
-- [ ] Step 7: Hardening and deployment
+- [x] Step 4: Upload pipeline
+- [x] Step 5: Viewer and AI chat
+- [x] Step 6: Settings and admin
+- [x] Step 7: Hardening and deployment
 
 ## Current Sprint (Step 1)
 
@@ -51,8 +51,33 @@
 
 ## Next Sprint (Step 4)
 
-- [ ] Add upload model and status lifecycle (`UPLOADED`, `PROCESSING`, `PROCESSED`, `FAILED`)
-- [ ] Add upload endpoint (`POST /reports/upload`) with local storage fallback
-- [ ] Add async job queue scaffold (Redis + Celery placeholders)
-- [ ] Add processing status endpoint (`GET /reports/{id}/status`)
-- [ ] Add reprocess endpoint (`POST /reports/{id}/reprocess`)
+- [x] Add upload model and status lifecycle (`UPLOADED`, `PROCESSING`, `PROCESSED`, `FAILED`)
+- [x] Add upload endpoint (`POST /reports/upload`) with local storage fallback
+- [x] Add async job queue scaffold (Redis + Celery placeholders)
+- [x] Add processing status endpoint (`GET /reports/{id}/status`)
+- [x] Add reprocess endpoint (`POST /reports/{id}/reprocess`)
+
+## Next Sprint (Step 5)
+
+- [x] Add report summary endpoint contract for dedicated tab
+- [x] Add findings/risks/recommendations dedicated endpoints
+- [x] Add charts endpoint with metric payload contract
+- [x] Add original file preview endpoint for uploaded source
+- [x] Add Groq-backed report chat endpoint scaffold (`POST /reports/{id}/chat`)
+
+## Next Sprint (Step 6)
+
+- [x] Add settings profile APIs (get/update)
+- [x] Add security password change endpoint
+- [x] Add team list/add/role update endpoints with role guard
+- [x] Add notification preferences get/update APIs
+- [x] Add templates CRUD APIs
+- [x] Add API keys create/list/revoke APIs
+
+## Next Sprint (Step 7)
+
+- [x] Add readiness probe endpoint and DB check
+- [x] Add request context + basic rate-limit middleware
+- [x] Add Dockerfile and docker-compose for deployability
+- [x] Add baseline tests (`pytest`) for health/security utilities
+- [x] Update backend docs with run/migrate/seed/test flows and endpoint map

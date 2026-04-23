@@ -66,3 +66,25 @@ class ReportDetailResponse(BaseModel):
     categories: list[dict]
     severity: list[dict]
     heatmap: list[dict]
+
+
+class ReportSummaryResponse(BaseModel):
+    report_id: str
+    summary: str
+
+
+class ReportChartsResponse(BaseModel):
+    report_id: str
+    trend: list[dict]
+    categories: list[dict]
+    severity: list[dict]
+    heatmap: list[dict]
+
+
+class ReportChatRequest(BaseModel):
+    message: str
+
+
+class ReportChatResponse(BaseModel):
+    report_id: str
+    answer: str

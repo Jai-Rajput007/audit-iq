@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
     refresh_token_expire_days: int = 14
+    upload_dir: str = "storage/uploads"
+    celery_broker_url: str = "redis://localhost:6379/0"
+    celery_result_backend: str = "redis://localhost:6379/1"
+    groq_api_key: str = ""
+    groq_model: str = "llama-3.1-8b-instant"
+    rate_limit_per_minute: int = 120
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", case_sensitive=False)
 

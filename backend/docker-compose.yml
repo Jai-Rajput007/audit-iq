@@ -1,0 +1,44 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: auditsummar
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  api:
+    build: .
+    depends_on:
+      - db
+      - redis
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+
+  worker:
+    build: .
+    depends_on:
+      - db
+      - redis
+    env_file:
+      - .env
+    command: celery -A app.tasks.worker.celery_app worker --loglevel=info -Q report-processing
+    volumes:
+      - .:/app
+
+volumes:
+  pgdata:

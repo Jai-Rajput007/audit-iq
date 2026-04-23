@@ -1,14 +1,32 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from datetime import date
+from pathlib import Path
+from uuid import uuid4
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy import asc, desc, func, or_, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.config import get_settings
 from app.core.deps import get_current_user
 from app.db.session import get_db
-from app.models.report import Report
+from app.models.report import Report, ReportUpload
 from app.models.user import User
-from app.schemas.report import ReportDetailResponse, ReportListItemResponse, ReportsListResponse
+from app.schemas.report import (
+    ReportChartsResponse,
+    ReportChatRequest,
+    ReportChatResponse,
+    ReportDetailResponse,
+    ReportListItemResponse,
+    ReportSummaryResponse,
+    ReportsListResponse,
+)
+from app.schemas.upload import ReportStatusResponse, UploadResponse
+from app.services.chat import ask_report_chat
+from app.tasks.report_tasks import enqueue_report_processing
 
 router = APIRouter(prefix="/reports", tags=["reports"])
+settings = get_settings()
 
 
 @router.get("", response_model=ReportsListResponse)
@@ -82,6 +100,104 @@ def get_report(report_id: str, user: User = Depends(get_current_user), db: Sessi
     )
 
 
+@router.get("/{report_id}/summary", response_model=ReportSummaryResponse)
+def report_summary(report_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> ReportSummaryResponse:
+    report = db.scalar(select(Report).where(Report.id == report_id, Report.organization_id == user.organization_id))
+    if report is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
+    return ReportSummaryResponse(report_id=report.id, summary=report.summary)
+
+
+@router.get("/{report_id}/findings")
+def report_findings(report_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[dict]:
+    report = db.scalar(select(Report).where(Report.id == report_id, Report.organization_id == user.organization_id).options(selectinload(Report.findings)))
+    if report is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
+    return [
+        {
+            "id": f.id,
+            "title": f.title,
+            "severity": f.severity,
+            "category": f.category,
+            "description": f.description,
+            "recommendation": f.recommendation,
+        }
+        for f in report.findings
+    ]
+
+
+@router.get("/{report_id}/risks")
+def report_risks(report_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[dict]:
+    findings = report_findings(report_id=report_id, user=user, db=db)
+    return [f for f in findings if f["severity"] in {"high", "medium", "low"}]
+
+
+@router.get("/{report_id}/recommendations")
+def report_recommendations(report_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[dict]:
+    report = db.scalar(
+        select(Report).where(Report.id == report_id, Report.organization_id == user.organization_id).options(selectinload(Report.recommendations))
+    )
+    if report is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
+    return [
+        {
+            "id": r.id,
+            "title": r.title,
+            "priority": r.priority,
+            "description": r.description,
+            "owner": r.owner,
+            "due": r.due,
+        }
+        for r in report.recommendations
+    ]
+
+
+@router.get("/{report_id}/charts", response_model=ReportChartsResponse)
+def report_charts(report_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> ReportChartsResponse:
+    report = db.scalar(select(Report).where(Report.id == report_id, Report.organization_id == user.organization_id).options(selectinload(Report.metrics)))
+    if report is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
+    metrics = report.metrics
+    return ReportChartsResponse(
+        report_id=report.id,
+        trend=metrics.trend if metrics else [],
+        categories=metrics.categories if metrics else [],
+        severity=metrics.severity if metrics else [],
+        heatmap=metrics.heatmap if metrics else [],
+    )
+
+
+@router.get("/{report_id}/original")
+def report_original(report_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> FileResponse:
+    report = db.scalar(select(Report).where(Report.id == report_id, Report.organization_id == user.organization_id))
+    if report is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
+    upload = db.scalar(select(ReportUpload).where(ReportUpload.report_id == report.id))
+    if upload is None or not Path(upload.storage_path).exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Original file not found")
+    return FileResponse(path=upload.storage_path, filename=upload.original_filename, media_type=upload.content_type)
+
+
+@router.post("/{report_id}/chat", response_model=ReportChatResponse)
+def report_chat(
+    report_id: str, payload: ReportChatRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)
+) -> ReportChatResponse:
+    report = db.scalar(
+        select(Report)
+        .where(Report.id == report_id, Report.organization_id == user.organization_id)
+        .options(selectinload(Report.findings), selectinload(Report.recommendations))
+    )
+    if report is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
+    context = (
+        f"Title: {report.title}\nSummary: {report.summary}\n"
+        f"Findings: {[f.title for f in report.findings]}\n"
+        f"Recommendations: {[r.title for r in report.recommendations]}"
+    )
+    answer = ask_report_chat(question=payload.message, report_context=context)
+    return ReportChatResponse(report_id=report.id, answer=answer)
+
+
 @router.delete("/{report_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_report(report_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> None:
     report = db.scalar(select(Report).where(Report.id == report_id, Report.organization_id == user.organization_id))
@@ -89,3 +205,82 @@ def delete_report(report_id: str, user: User = Depends(get_current_user), db: Se
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
     db.delete(report)
     db.commit()
+
+
+@router.post("/upload", response_model=UploadResponse, status_code=status.HTTP_201_CREATED)
+async def upload_report(
+    file: UploadFile = File(...),
+    audit_type: str = Form(...),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> UploadResponse:
+    upload_root = Path(settings.upload_dir)
+    upload_root.mkdir(parents=True, exist_ok=True)
+
+    extension = Path(file.filename or "report").suffix
+    stored_name = f"{uuid4()}{extension}"
+    storage_path = upload_root / stored_name
+    content = await file.read()
+    storage_path.write_bytes(content)
+
+    report = Report(
+        organization_id=user.organization_id,
+        title=Path(file.filename or "Uploaded Report").stem,
+        audit_type=audit_type,
+        uploaded_at=date.today(),
+        file_size=f"{round(len(content) / (1024 * 1024), 2)} MB",
+        file_type=(extension.replace(".", "") or "PDF").upper(),
+        compliance=0,
+        risk="medium",
+        status="UPLOADED",
+        summary="Upload received. Processing pipeline is queued.",
+    )
+    db.add(report)
+    db.flush()
+
+    upload = ReportUpload(
+        report_id=report.id,
+        original_filename=file.filename or "report",
+        storage_path=str(storage_path),
+        content_type=file.content_type or "application/octet-stream",
+        size_bytes=len(content),
+        processing_step=1,
+    )
+    db.add(upload)
+    db.commit()
+
+    enqueue_report_processing(report.id)
+    return UploadResponse(report_id=report.id, status=report.status, processing_step=upload.processing_step)
+
+
+@router.get("/{report_id}/status", response_model=ReportStatusResponse)
+def report_status(report_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> ReportStatusResponse:
+    report = db.scalar(select(Report).where(Report.id == report_id, Report.organization_id == user.organization_id))
+    if report is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
+    upload = db.scalar(select(ReportUpload).where(ReportUpload.report_id == report.id))
+    step = upload.processing_step if upload else 1
+    label = {
+        1: "uploaded",
+        2: "extracting content",
+        3: "running ai analysis",
+        4: "building risk model",
+        5: "finalizing report",
+    }.get(step, "processing")
+    return ReportStatusResponse(report_id=report.id, status=report.status, processing_step=step, processing_label=label)
+
+
+@router.post("/{report_id}/reprocess", response_model=ReportStatusResponse)
+def reprocess_report(report_id: str, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> ReportStatusResponse:
+    report = db.scalar(select(Report).where(Report.id == report_id, Report.organization_id == user.organization_id))
+    if report is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
+    upload = db.scalar(select(ReportUpload).where(ReportUpload.report_id == report.id))
+    if upload is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Report has no uploaded source")
+
+    report.status = "UPLOADED"
+    upload.processing_step = 1
+    db.commit()
+    enqueue_report_processing(report.id)
+    return ReportStatusResponse(report_id=report.id, status=report.status, processing_step=upload.processing_step, processing_label="uploaded")

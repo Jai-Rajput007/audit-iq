@@ -17,8 +17,8 @@ def dashboard_summary(user: User = Depends(get_current_user), db: Session = Depe
     row = db.execute(
         select(
             func.count(Report.id),
-            func.sum(case((Report.status == "Processed", 1), else_=0)),
-            func.sum(case((Report.status == "Failed", 1), else_=0)),
+            func.sum(case((func.lower(Report.status) == "processed", 1), else_=0)),
+            func.sum(case((func.lower(Report.status) == "failed", 1), else_=0)),
             func.coalesce(func.avg(Report.compliance), 0),
             func.sum(case((Report.risk == "high", 1), else_=0)),
         ).where(org_filter)
